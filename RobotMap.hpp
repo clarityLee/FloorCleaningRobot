@@ -2,9 +2,12 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <queue>
+#include <chrono>
+#include <random>
 using namespace std;
 const int MAXINT = 2147483647;
-const short randomHomingPaths = 2;
+const short randomHomingPaths = 10;
 
 class Cell {
 public:
@@ -37,22 +40,6 @@ public:
     int visitedSum = 0;
 };
 
-class CellCompareForInit {
-public: bool operator() (Cell* const & lhs, Cell* const & rhs) const;
-};
-class CellCompare {
-public: bool operator() (Cell* const & lhs, Cell* const & rhs) const;
-};
-class PathCompare {
-public: bool operator() (_tmpPathWrapper* const & lhs, _tmpPathWrapper* const & rhs) const;
-};
-
-class Coordinate {
-public:
-    Coordinate(short _i, short _j) : i(_i), j(_j) {};
-    short i, j;
-};
-
 class RobotMap {
 friend class CleaningRobot;
 public:
@@ -64,29 +51,43 @@ public:
     void findClosestUnvisited(vector<Cell*> &path, Cell* source, Cell* lastIncToR);
     void randomShortestWayHome(vector<Cell*> &path, Cell* current);
     Cell* randomStart(); // returns random one of recharger's neighbor;
-    void recordPath(Cell* cell);
     Cell* unvisitedAdjacent(Cell* cell);
+
 private:
     
-    short rows = 0, columns = 0,
-        rx = 0, ry = 0; // rx, ry : x, y positoin of recharger.
+    short rows = 0, columns = 0;
+    // short rx = 0, ry = 0; // rx, ry : x, y positoin of recharger.
     int totalCells = 0;
     char** rawData;
     bool hasMultiplePaths = false;
-    // bool** visited;
     Cells* cells;
     Cell* recharger = nullptr;
     vector<vector<Cell*>> adjCells;
-    vector<Coordinate> path;
-    // int* distance;
+
+    bool* opensetFlag = nullptr;
+    bool* closedSetFlag = nullptr;
+    int* cameFrom = nullptr;
+
+    mt19937 randomGenerator;
+    uniform_int_distribution<short> unidist0to1, unidist0to2, unidist0to3;
+    inline short rndFrom0To(short num);
+
     void calculateDistanceToR();
-    void a_star(vector<Cell*> &path, Cell* source, Cell* destination);
+    /* TODO: */ void calculateDistanceToR(Cell* adjToR);
     void findRandomShortestWayHome(_tmpPathWrapper* pathWrapper, Cell* source);
-    void constructPath(vector<Cell*> &path, map<Cell*, Cell*> &cameFrom, Cell* current);
+    void constructPath(vector<Cell*> &path, int* cameFrom, Cell* current);
 
     // for test:
     void printAllDistance();
     void printPath(vector<Cell*> &path);
+};
 
-    
+class CellCompareForInit {
+public: bool operator() (Cell* const & lhs, Cell* const & rhs) const;
+};
+class CellCompare {
+public: bool operator() (Cell* const & lhs, Cell* const & rhs) const;
+};
+class PathCompare {
+public: bool operator() (_tmpPathWrapper* const & lhs, _tmpPathWrapper* const & rhs) const;
 };

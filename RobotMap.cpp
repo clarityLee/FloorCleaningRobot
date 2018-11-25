@@ -5,6 +5,7 @@
 #include <string>
 #include <random>
 #include <chrono>
+#include <algorithm> // for the std::fill function.
 #include "RobotMap.hpp"
 using namespace std;
 
@@ -62,27 +63,34 @@ Cell* Cells::get(int i) {
     return cells[i];
 }
 
-RobotMap::RobotMap(short r, short c) : rows(r), columns(c) {
+RobotMap::RobotMap(short r, short c) : rows(r), columns(c),
+        randomGenerator(chrono::high_resolution_clock::now().time_since_epoch().count()),
+        unidist0to1(0, 1),
+        unidist0to2(0, 2),
+        unidist0to3(0, 3) {
     rawData = new char*[rows];
-    // visited = new bool*[rows];
     cells = new Cells(r*c);
     for (short i = 0 ; i < rows ; ++i) {
         rawData[i] = new char[columns];
-        // visited[i] = new bool[columns];
     }
 };
 
 RobotMap::~RobotMap() {
-    for (short i = 0 ; i < rows ; ++i) {
-        delete [] rawData[i];
-        // delete [] visited[i];
+    if (opensetFlag) {
+        delete [] opensetFlag;
     }
-    delete [] rawData;
-    // delete [] visited;
+    if (closedSetFlag) {
+        delete [] closedSetFlag;
+    }
+    if (cameFrom) {
+        delete [] cameFrom;
+    }
     delete cells;
 };
 
 void RobotMap::readFloorData(std::ifstream &readInFile) {
+    constexpr auto &&now = std::chrono::high_resolution_clock::now;
+    auto phaseStartTime = now();
     int cellIndex = 0;
     for (short i = 0 ; i < rows ; ++i) {
         for (short j = 0 ; j < columns ; ++j) {
@@ -96,6 +104,8 @@ void RobotMap::readFloorData(std::ifstream &readInFile) {
         }
     }
     totalCells = cells->size();
+    chrono::duration<double> elapsed = now() - phaseStartTime;
+    cout << "    - RobotMap::readFloorData(), total used time : " << (int) (elapsed.count() * 1000) << " ms." << endl;
 };
 
 void RobotMap::processData() {
@@ -123,19 +133,25 @@ void RobotMap::processData() {
         }
     }
     chrono::duration<double> elapsed = now() - phaseStartTime;
-    cout << "construct adjacency list completed in : " << elapsed.count() * 1000 << " ms." << endl;
+    cout << "    - RobotMap::processData : construct adjacency list of all cells. / completed in : "
+         << (int) (elapsed.count() * 1000) << " ms." << endl;
 
-    // construct distance array
-    // distance = new int[totalCells];
-    // for (int i = 0 ; i < totalCells ; ++i) {
-    //     distance[i] = MAXINT;
-    // }
+    opensetFlag = new bool[totalCells];
+    closedSetFlag = new bool[totalCells];
+    cameFrom = new int[totalCells];
 
     // using dijkstra to calculate distance
     phaseStartTime = now();
     calculateDistanceToR();
     elapsed = now() - phaseStartTime;
-    cout << "calculateDistanceToR() completed in : " << elapsed.count() * 1000 << " ms." << endl;
+    cout << "    - RobotMap::processData : calculating all cell distances to recharger. / Completed in : "
+         << (int) (elapsed.count() * 1000) << " ms." << endl;
+
+    // deallocate raw floor data
+    for (short i = 0 ; i < rows ; ++i) {
+        delete rawData[i];
+    }
+    delete [] rawData;
 };
 
 void RobotMap::findClosestUnvisited(vector<Cell*> &path, Cell* source) {
@@ -144,79 +160,68 @@ void RobotMap::findClosestUnvisited(vector<Cell*> &path, Cell* source) {
 
 void RobotMap::findClosestUnvisited(vector<Cell*> &path, Cell* source, Cell* lastIncToR) {
     cells->resetTempDistance();
-    multiset<Cell*, CellCompare> closedSet;
+    fill(opensetFlag, opensetFlag+totalCells, false);
+    fill(closedSetFlag, closedSetFlag+totalCells, false);
+    fill(cameFrom, cameFrom+totalCells, -1);
     multiset<Cell*, CellCompare> openSet;
-    map<Cell*, Cell*> cameFrom;
 
     if (source == recharger) {
         recharger->_tempDistance = 0;
-        closedSet.insert(recharger);
+        closedSetFlag[recharger->index] = true;
 
         lastIncToR->_tempDistance = 1;
-        openSet.insert(lastIncToR);
+        openSet.insert(lastIncToR); opensetFlag[lastIncToR->index] = true;
     } else {
         source->_tempDistance = 0;
-        openSet.insert(source);
+        openSet.insert(source); opensetFlag[source->index] = true;
     }
 
     Cell *current, *neighbor;
     multiset<Cell*, CellCompare>::iterator it;
 
-    // cout << endl << endl;
     while(openSet.size()) {
         it = openSet.begin();
         current = *it;
 
-        openSet.erase(it);
-        closedSet.insert(current);
-        // cout << "select ("<<current->i<<", "<<current->j<<") from openSet." << endl;
-        // cout << "openSet.size: " << openSet.size() << endl;
+        openSet.erase(it); opensetFlag[current->index] = false;
+        closedSetFlag[current->index] = true;
         
         // for each neighbor of current
         for (int i = 0 ; i < adjCells[current->index].size() ; ++i) {
             neighbor = adjCells[current->index][i];
-            // cout << "  neighbor("<<neighbor->i<<", "<<neighbor->j<<") " << (neighbor->visited ? "visited" : "not visited, ") << endl;
 
             // if neighbor in closed set
-            if (closedSet.find(neighbor) != closedSet.end()) {
-                // cout << "                 is already in closed set." << endl;
-                continue;
-            }
+            if (closedSetFlag[neighbor->index]) continue;
 
             // the distance from R to neighbor via current
             int distance = current->_tempDistance + 1; // distance of neighbor to R
             
             // if neighbor is in open set and 
-            if (openSet.find(neighbor) != openSet.end()) {
-                // cout << "                 openSet.find(neighbor) : (" << (*openSet.find(neighbor))->i << ", " << (*openSet.find(neighbor))->j << ")" << endl;
+            if (opensetFlag[neighbor->index]) {
                 if (distance >= neighbor->_tempDistance) {
-                    // cout << "                 is in openSet, but no better path found, do nothing." << endl;
                     // not a better option , do nothing
                 } else {
                     // the new path is a better option, do update
                     openSet.erase(neighbor);
                     neighbor->_tempDistance = distance;
                     openSet.insert(neighbor);
-                    cameFrom[neighbor] = current;
-                    // cout << "                 is in open set, and a better path is found, do update." << endl;
+                    // cameFrom[neighbor] = current;
+                    cameFrom[neighbor->index] = current->index;
                 }
 
             // if neighbor not in open set yet
             } else {
                 if (distance < neighbor->_tempDistance) neighbor->_tempDistance = distance;
-                openSet.insert(neighbor);
-                cameFrom[neighbor] = current;
-                // cout << "                 is not in open set yet, add to openset."<< endl;
+                openSet.insert(neighbor); opensetFlag[neighbor->index] = true;
+                // cameFrom[neighbor] = current;
+                cameFrom[neighbor->index] = current->index;
             }
         }
 
         if (!current->visited) {
-            // cout << "         current("<<current->i<<", "<<current->j<<") visited: "<< (current->visited ? "TRUE" : "FALSE") << endl;
             break;
         } // an unvisited node is reached!
     }
-
-    // cout << "         destination("<<current->i<<", "<<current->j<<") visited: "<< (current->visited ? "TRUE" : "FALSE") << endl;
 
     constructPath(path, cameFrom, current);
 };
@@ -232,13 +237,6 @@ void RobotMap::randomShortestWayHome(vector<Cell*> &path, Cell* current) {
         if (!hasMultiplePaths) break;
     }
 
-    // ↓ for test only
-    // cout << "There are " << paths.size() << " shortest paths in the multiset." << endl;
-    // cout << "    The first one in the multiSet has total visited Sum : " << (*paths.begin())->visitedSum << "." << endl;
-    // cout << "    The last one in the multiSet has total visited Sum : " << (*paths.rbegin())->visitedSum << "." << endl;
-    // cout << "    The program is selecting first one." << endl;
-    // ↑ for test only
-    
     // select one path from multiset, and "copy" the path into container in argument
     path = (*paths.begin())->path;
     
@@ -246,29 +244,17 @@ void RobotMap::randomShortestWayHome(vector<Cell*> &path, Cell* current) {
     for (multiset<_tmpPathWrapper*, PathCompare>::iterator it = paths.begin() ; it != paths.end() ; ++it) {
         delete *it;
     }
-    // cout << "             completed: map->randomShortestWayHome(path, current)" << endl;
 };
-
 
 Cell* RobotMap::randomStart() {
-    int neighbors = adjCells[recharger->index].size();
-    int useNeighbor = 0;
+    int neighborNumber = adjCells[recharger->index].size();
+    int useNeighborIndex = 0;
 
-    // cout << "           There are " << neighbors << " neighbors from recharger." << endl;
-
-    if (neighbors > 1) { // if there is more than 1 neighbor to choose
-        auto seed = chrono::high_resolution_clock::now().time_since_epoch().count();
-        std::mt19937 rng(seed);    // random-number engine used (Mersenne-Twister in this case)
-        std::uniform_int_distribution<int> uni(0, neighbors-1); // guaranteed unbiased
-        useNeighbor = uni(rng);
+    if (neighborNumber > 1) {
+        useNeighborIndex = rndFrom0To(neighborNumber-1);
     }
-    // cout << "           useNeighbor index : " << useNeighbor << endl;
 
-    return adjCells[recharger->index][useNeighbor];
-};
-
-void RobotMap::recordPath(Cell* cell) {
-    path.emplace_back(cell->i, cell->j);
+    return adjCells[recharger->index][useNeighborIndex];
 };
 
 Cell* RobotMap::unvisitedAdjacent(Cell* cell) {
@@ -291,19 +277,17 @@ Cell* RobotMap::unvisitedAdjacent(Cell* cell) {
 
     short returnIndex = 0;
     if (cellsMinToR.size() > 1) {
-        auto seed = chrono::high_resolution_clock::now().time_since_epoch().count();
-        std::mt19937 rng(seed);
-        std::uniform_int_distribution<int> uni(0, cellsMinToR.size()-1); // guaranteed unbiased
-        returnIndex = uni(rng);
+        returnIndex = rndFrom0To(cellsMinToR.size()-1);
     }
     return cellsMinToR[returnIndex];
 };
 
 void RobotMap::calculateDistanceToR() {
-    multiset<Cell*, CellCompareForInit> closedSet;
+    fill(opensetFlag, opensetFlag+totalCells, false);
+    fill(closedSetFlag, closedSetFlag+totalCells, false);
     multiset<Cell*, CellCompareForInit> openSet;
     recharger->distance = 0;
-    openSet.insert(recharger);
+    openSet.insert(recharger); opensetFlag[recharger->index] = true;
     Cell *current, // minimum in open seet
         *neighbor;
     multiset<Cell*, CellCompareForInit>::iterator it;
@@ -312,21 +296,21 @@ void RobotMap::calculateDistanceToR() {
         it = openSet.begin();
         current = *it;
 
-        openSet.erase(it);
-        closedSet.insert(current);
+        openSet.erase(it); opensetFlag[current->index] = false;
+        closedSetFlag[current->index] = true;
 
         // for each neighbor of current
         for (int i = 0 ; i < adjCells[current->index].size() ; ++i) {
             neighbor = adjCells[current->index][i];
 
             // if neighbor in closed set
-            if (closedSet.find(neighbor) != closedSet.end()) continue;
+            if (closedSetFlag[neighbor->index]) continue;
 
             // the distance from R to neighbor via current
             int distance = current->distance + 1; // distance of neighbor to R
             
             // if neighbor is in open set and 
-            if (openSet.find(neighbor) != openSet.end()) {
+            if (opensetFlag[neighbor->index]) {
                 if (distance >= neighbor->distance) {
                     // not a better option , do nothing
                 } else {
@@ -339,70 +323,17 @@ void RobotMap::calculateDistanceToR() {
             // if neighbor not in open set
             } else {
                 if (distance < neighbor->distance) neighbor->distance = distance;
-                openSet.insert(neighbor);
+                openSet.insert(neighbor); opensetFlag[neighbor->index] = true;
             }
         }
     }
 };
 
-void RobotMap::a_star(vector<Cell*> &path, Cell* source, Cell* destination) {
-
-    cells->resetTempDistance();
-    multiset<Cell*, CellCompare> closedSet;
-    multiset<Cell*, CellCompare> openSet;
-    map<Cell*, Cell*> cameFrom;
-
-    source->_tempDistance = 0;
-    openSet.insert(source);
-
-    Cell *current, *neighbor;
-    multiset<Cell*, CellCompare>::iterator it;
-
-    while(openSet.size()) {
-        it = openSet.begin();
-        current = *it;
-
-        if (current == recharger) break; // recharger arrived
-
-        openSet.erase(it);
-        closedSet.insert(current);
-        
-        // for each neighbor of current
-        for (int i = 0 ; i < adjCells[current->index].size() ; ++i) {
-            neighbor = adjCells[current->index][i];
-
-            // if neighbor in closed set
-            if (closedSet.find(neighbor) != closedSet.end()) continue;
-
-            // the distance from R to neighbor via current
-            int distance = current->distance + 1; // distance of neighbor to R
-            
-            // if neighbor is in open set and 
-            if (openSet.find(neighbor) != openSet.end()) {
-                if (distance >= neighbor->distance) {
-                    // not a better option , do nothing
-                } else {
-                    // the new path is a better option, do update
-                    openSet.erase(neighbor);
-                    neighbor->distance = distance;
-                    openSet.insert(neighbor);
-                    cameFrom[neighbor] = current;
-                }
-
-            // if neighbor not in open set yet
-            } else {
-                if (distance < neighbor->distance) neighbor->distance = distance;
-                openSet.insert(neighbor);
-                cameFrom[neighbor] = current;
-            }
-        }
-    }
-
-    constructPath(path, cameFrom, current);
+void RobotMap::calculateDistanceToR(Cell* adjToR) {
+    // TODO:
 };
 
 void RobotMap::findRandomShortestWayHome(_tmpPathWrapper* pathWrapper, Cell* source) {
-    // cout << "               doing: RobotMap::findRandomShortestWayHome" << endl;
     Cell *next, *current = source;
     vector<Cell*> cellsMinToR;
     int minDistance;
@@ -411,7 +342,6 @@ void RobotMap::findRandomShortestWayHome(_tmpPathWrapper* pathWrapper, Cell* sou
     int pathStoreIndex = source->distance - 1;
 
     while(current != recharger) {
-        // cout << "               loop count : " << count++ << endl;
         cellsMinToR.clear();
         minDistance = current->distance;
 
@@ -427,42 +357,42 @@ void RobotMap::findRandomShortestWayHome(_tmpPathWrapper* pathWrapper, Cell* sou
                 cellsMinToR.push_back(adjCells[current->index][i]);
             }
         }
-        
 
         short index = 0;
         if (cellsMinToR.size() > 1) {
             if (!hasMultiplePaths) hasMultiplePaths = true;
-            auto seed = chrono::high_resolution_clock::now().time_since_epoch().count();
-            std::mt19937 rng(seed);
-            std::uniform_int_distribution<int> uni(0, cellsMinToR.size()-1); // guaranteed unbiased
-            index = uni(rng);
+            index = rndFrom0To(cellsMinToR.size()-1);
         }
 
         next = cellsMinToR[index];
-        // cout << "| push next(" << next->i << ", " << next->j <<") |";
         pathWrapper->path[pathStoreIndex--] = next;
         pathWrapper->visitedSum += next->visited;
-        // cout << "               change from current("<<current->i<<", "<<current->j<<") distance: "<<current->distance<<" to next("<<next->i<<", "<<next->j<<") distance:"<<next->distance << endl;
         current = next;
     }
-    // cout << endl;
-    
-    // pathWrapper->path.push_back(recharger);
-    // cout << "| push recharger(" << recharger->i << ", " << recharger->j <<") |";
-    // cout << "               completed: RobotMap::findRandomShortestWayHome" << endl;
 };
 
-void RobotMap::constructPath(vector<Cell*> &path, map<Cell*, Cell*> &cameFrom, Cell* current) {
+void RobotMap::constructPath(vector<Cell*> &path, int* cameFrom, Cell* current) {
+    int currentIndex = current->index;
+    path.clear();
     path.push_back(current);
+    
     while(true) {
 
-        // if key current doesn't exist
-        if (cameFrom.find(current) == cameFrom.end()) break;
+        // if current does not exist in cameFrom
+        if (cameFrom[currentIndex] == -1) break;
 
-        current = cameFrom[current];
-        path.push_back(current);
-        
+        currentIndex = cameFrom[currentIndex];
+        path.push_back(cells->cells[currentIndex]);
     }
+};
+
+inline short RobotMap::rndFrom0To(short num) {
+    if (num > 3) {
+        throw std::runtime_error("Error: input num > 3, which is not allowed.");
+    }
+    if (num == 1) return unidist0to1(randomGenerator);
+    if (num == 2) return unidist0to2(randomGenerator);
+    return unidist0to3(randomGenerator);
 };
 
 void RobotMap::printAllDistance() {

@@ -21,5 +21,12 @@ private:
     int usingSteps = 0;
     string errorMessage;
     RobotMap* map;
+    class coordinate {
+    public:
+        coordinate(short _i, short _j) : i(_i), j(_j) {};
+        short i, j;
+    };
+    vector<coordinate> finalPath;
+    
     inline bool enoughBattery(Cell* cell, int battery);
 };

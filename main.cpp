@@ -9,28 +9,29 @@ int main(int argc, char* argv[]) {
     auto programStartTime = now();
 
     CleaningRobot robot;
-    cout << "Robot is starting to readFloorData() ....";
+    cout << "** Robot is starting to do CleaningRobot::readFloorData() ...." << endl;
     auto phaseStartTime = now();
     robot.readFloorData(argc, argv);
     chrono::duration<double> elapsed = now() - phaseStartTime;
-    cout << "completed in : " << elapsed.count() * 1000 << " ms." << endl;
+    cout << "    CleaningRobot::readFloorData() completed in : " << (int) (elapsed.count() * 1000) << " ms." << endl;
     
 
-    cout << "Robot is generating path ....";
+    cout << "** Robot is cleaning floor now (generating path) ....";
     phaseStartTime = now();
     robot.clean();
     elapsed = now() - phaseStartTime;
-    cout << "completed in : " << elapsed.count() * 1000 << " ms." << endl;
+    cout << "completed in : " << (int) (elapsed.count() * 1000) << " ms." << endl;
     
 
-    cout << "Robot is saving path file.....";
+    cout << "** Robot is saving path file.....";
     phaseStartTime = now();
     robot.outputPath(argc, argv);
     elapsed = now() - phaseStartTime;
-    cout << "completed in : " << elapsed.count() * 1000 << " ms." << endl;
+    cout << "completed in : " << (int) (elapsed.count() * 1000) << " ms." << endl;
 
     elapsed = now() - programStartTime;
-    cout << "Total used time :" << elapsed.count() * 1000 << " ms." << endl;
+    cout << "** Total used time : " << (int) (elapsed.count() * 1000) << " ms." << endl;
+    cout << endl;
     
     return 0;
 };
