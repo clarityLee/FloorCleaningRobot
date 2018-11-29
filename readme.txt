@@ -9,3 +9,8 @@ This is a c++ program for a cleaning robot with limited battery to clean all the
 
 3. Execution output
     The result will be output to "final.path" in the same folder of floor.data.
+
+Verify the result:
+1. compile:
+    g++ -std=c++11 VerifyBot.cpp -o v.exe
+2. v.exe FolderName

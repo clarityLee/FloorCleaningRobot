@@ -12,6 +12,10 @@ int main(int argc, char* argv[]) {
     cout << "** Robot is starting to do CleaningRobot::readFloorData() ...." << endl;
     auto phaseStartTime = now();
     robot.readFloorData(argc, argv);
+    if (robot.hasError()) {
+        robot.printError();
+        return 0;
+    }
     chrono::duration<double> elapsed = now() - phaseStartTime;
     cout << "    CleaningRobot::readFloorData() completed in : " << (int) (elapsed.count() * 1000) << " ms." << endl;
     
@@ -20,8 +24,7 @@ int main(int argc, char* argv[]) {
     phaseStartTime = now();
     robot.clean();
     elapsed = now() - phaseStartTime;
-    cout << "completed in : " << (int) (elapsed.count() * 1000) << " ms." << endl;
-    
+    cout << "   completed in : " << (int) (elapsed.count() * 1000) << " ms." << endl;
 
     cout << "** Robot is saving path file.....";
     phaseStartTime = now();
