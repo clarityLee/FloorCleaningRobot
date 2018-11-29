@@ -4,7 +4,6 @@
 #include "RobotMap.hpp"
 using namespace std;
 
-
 class CleaningRobot {
 public:
     CleaningRobot();
@@ -21,6 +20,9 @@ private:
     int usingSteps = 0;
     string errorMessage;
     RobotMap* map;
+    string filePath;
+    int estTime = 0;
+
     class coordinate {
     public:
         coordinate(short _i, short _j) : i(_i), j(_j) {};
