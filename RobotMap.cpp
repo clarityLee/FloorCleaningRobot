@@ -5,6 +5,7 @@
 #include <random>
 #include <chrono>
 #include <queue>
+#include <deque>
 #include "RobotMap.hpp"
 using namespace std;
 
@@ -14,41 +15,6 @@ bool PathCompare::operator() (_tmpPathWrapper* const & lhs, _tmpPathWrapper* con
 bool DqPathCompare::operator() (DqPathWrapper* const & lhs, DqPathWrapper* const & rhs) const {
     return lhs->visitedSum > rhs->visitedSum;
 };
-
-Cells::Cells(int reserveSize) {
-    cells.reserve(reserveSize);
-};
-Cells::~Cells() {
-    for (int i = 0 ; i < cells.size() ; ++i) {
-        delete cells[i];
-    }
-};
-int Cells::size() {return cells.size();};
-void Cells::push_back(Cell* cell) {
-    cells.push_back(cell);
-};
-Cell* Cells::back() {return cells.back();};
-Cell* Cells::get(short i, short j) {
-
-    // using binary search
-    int left = 0, right = cells.size() - 1;
-    int mid;
-    while(left <= right) {
-        mid = left + (right-left)/2;
-        Cell* cm = cells[mid];
-        if (i == cm->i && j == cm->j) return cells[mid];
-
-        if (i < cm->i || (i == cm->i && j < cm->j)) {
-            right = mid - 1;
-        } else if (i > cm->i || (i == cm->i && j > cm->j)) {
-            left = mid + 1;
-        }
-    }
-    return nullptr;
-};
-Cell* Cells::get(int i) {
-    return cells[i];
-}
 
 bool Qmember::operator< (const Qmember &rhs) const {
     return distance > rhs.distance;
@@ -74,32 +40,52 @@ void resizePQ(priority_queue<T, S, C>& q, int size) {
     HackedQueue::Container(q).reserve(size);
 }
 
+template <class T, class S, class C>
+void shrinkToFit(priority_queue<T, S, C>& q) {
+    struct HackedQueue : private priority_queue<T, S, C> {
+        static S& Container(priority_queue<T, S, C>& q) {
+            return q.*&HackedQueue::c;
+        }
+    };
+    HackedQueue::Container(q).shrink_to_fit();
+};
+
+spQueue::spQueue(int _capacity) : capacity(_capacity) {
+    q = new Cell*[capacity];
+};
+spQueue::~spQueue() {
+    delete [] q;
+};
+void spQueue::push(Cell* c) {
+    q[++last] = c;
+    ++size;
+}
+void spQueue::pop() {
+    if (!size) return;
+    ++first;
+    --size;
+};
+Cell* spQueue::front() {
+    if (!size) return nullptr;
+    return q[first];
+};
+bool spQueue::empty() {
+    return !size;
+}
+
 RobotMap::RobotMap(short r, short c) : rows(r), columns(c),
         randomGenerator(chrono::high_resolution_clock::now().time_since_epoch().count()),
         unidist0to1(0, 1),
         unidist0to2(0, 2),
         unidist0to3(0, 3) {
     rawData = new char*[rows];
-    cells = new Cells(r*c);
+    cells.reserve(r*c);
     for (short i = 0 ; i < rows ; ++i) {
         rawData[i] = new char[columns];
     }
 };
 
 RobotMap::~RobotMap() {
-    if (opensetFlag) {
-        delete [] opensetFlag;
-    }
-    if (closedSetFlag) {
-        delete [] closedSetFlag;
-    }
-    if (tmpCameFrom) {
-        delete [] tmpCameFrom;
-    }
-    if (tmpDist) {
-        delete [] tmpDist;
-    }
-    delete cells;
     for(map<int, DijkData*>::iterator it = allDijkData.begin(); it != allDijkData.end(); ++it) {
         delete it->second;
         it->second = nullptr;
@@ -114,16 +100,20 @@ void RobotMap::readFloorData(std::ifstream &readInFile) {
         for (short j = 0 ; j < columns ; ++j) {
             readInFile >> rawData[i][j];
             if (rawData[i][j] == '0') {
-                cells->push_back(new Cell(i, j, cellIndex++));
+                // cells.push_back(new Cell(cellIndex++));
+                cells.emplace_back(cellIndex++);
+                cellCoords.emplace_back(i ,j);
             } else if (rawData[i][j] == 'R') {
-                cells->push_back(new Cell(i, j, cellIndex++));
-                recharger = cells->back();
+                // cells.push_back(new Cell(cellIndex++));
+                cells.emplace_back(cellIndex++);
+                cellCoords.emplace_back(i ,j);
+                recharger = &(cells.back());
             }
         }
     }
-    totalCells = cells->size();
+    totalCells = cells.size();
     chrono::duration<double> elapsed = now() - phaseStartTime;
-    cout << "    - RobotMap::readFloorData(), total Clean Cells: " << totalCells << ", total used time : " << (int) (elapsed.count() * 1000) << " ms." << endl;
+    cout << "    - RobotMap::readFloorData(), total Cells: " << totalCells << ", total used time : " << (int) (elapsed.count() * 1000) << " ms." << endl;
 };
 
 void RobotMap::processData() {
@@ -132,25 +122,25 @@ void RobotMap::processData() {
     // construct adjacency list
     cout << "    - RobotMap::processData : construct adjacency list of all cells..." << endl;
     auto phaseStartTime = now();
-    adjCells.resize(totalCells);
     for (short i = 0 ; i < rows ; ++i) {
         for (short j = 0 ; j < columns ; ++j) {
             if (rawData[i][j] == '1') continue;
-            Cell* cell = cells->get(i,j);
+            short index = 0;
+            Cell &cell = cells[getIndex(i ,j)];
             if (i>0 && rawData[i-1][j] != '1') {
-                adjCells[cell->index].push_back(cells->get(i-1, j));
+                cell.adjCells[index++] = &(cells[getIndex(i-1, j)]);
                 ++edges;
             }
             if (j<columns-1 && rawData[i][j+1] != '1') {
-                adjCells[cell->index].push_back(cells->get(i, j+1));
+                cell.adjCells[index++] = &(cells[getIndex(i, j+1)]);
                 ++edges;
             }
             if (i<rows-1 && rawData[i+1][j] != '1') {
-                adjCells[cell->index].push_back(cells->get(i+1, j));
+                cell.adjCells[index++] = &(cells[getIndex(i+1, j)]);
                 ++edges;
             }
             if (j>0 && rawData[i][j-1] != '1') {
-                adjCells[cell->index].push_back(cells->get(i, j-1));
+                cell.adjCells[index++] = &(cells[getIndex(i, j-1)]);
                 ++edges;
             }
         }
@@ -160,24 +150,19 @@ void RobotMap::processData() {
     cout << "    - RobotMap::processData : adjacency list of all cells completed in : "
         << (int) (elapsed.count() * 1000) << " ms." << endl;
 
-    opensetFlag = new bool[totalCells];
-    closedSetFlag = new bool[totalCells];
-    tmpCameFrom = new int[totalCells];
-    tmpDist = new int[totalCells];
     resizePQ(openSet, totalCells);
 
     // using dijkstra to calculate distance
     phaseStartTime = now();
-    vector<Cell*> &adjsToR = adjCells[recharger->index];
     calcDijkRespectTo(-1); // respect to nothing
     distToR = allDijkData[-1]->distanceToR;
-    for (short i = 0 ; i < adjsToR.size() ; ++i) {
-        calcDijkRespectTo(adjsToR[i]->index);
+    for (short k = 0 ; k < 4 && recharger->adjCells[k] != nullptr; ++k) {
+        calcDijkRespectTo(recharger->adjCells[k]->index);
     }
+    clearPQ(openSet); shrinkToFit(openSet);
     elapsed = now() - phaseStartTime;
     cout << "    - RobotMap::processData : calculating all cell distances to recharger. / Completed in : "
          << (int) (elapsed.count() * 1000) << " ms." << endl;
-
 
     // deallocate raw floor data
     for (short i = 0 ; i < rows ; ++i) {
@@ -188,10 +173,12 @@ void RobotMap::processData() {
 
 void RobotMap::findClosestUnvisited(vector<Cell*> &path, Cell* source) {
 
+    bool* opensetFlag = new bool[totalCells];
+    bool* closedSetFlag = new bool[totalCells];
     clearPQ(openSet);
 
-    int* dist = tmpDist;
-    int* cameFrom = tmpCameFrom;
+    int* dist = new int[totalCells];
+    int* cameFrom = new int[totalCells];
     for (int i = 0 ; i < totalCells ; ++i) {
         opensetFlag[i] = false;
         closedSetFlag[i] = false;
@@ -221,10 +208,8 @@ void RobotMap::findClosestUnvisited(vector<Cell*> &path, Cell* source) {
         opensetFlag[current->index] = false;
         closedSetFlag[current->index] = true;
 
-        // for each neighbor of current
-        vector<Cell*> &adjs = adjCells[current->index];
-        for (int i = 0 ; i < adjs.size() ; ++i) {
-            neighbor = adjs[i];
+        for (short i = 0 ; i < 4 && current->adjCells[i] != nullptr; ++i) {
+            neighbor = current->adjCells[i];
 
             // if neighbor in closed set
             if (closedSetFlag[neighbor->index]) continue;
@@ -258,6 +243,50 @@ void RobotMap::findClosestUnvisited(vector<Cell*> &path, Cell* source) {
     }
 
     constructPath(path, cameFrom, current);
+    delete [] opensetFlag;
+    delete [] closedSetFlag;
+    delete [] dist;
+    delete [] cameFrom;
+};
+
+void RobotMap::findClosestUnvisitedv3(vector<Cell*> &path, Cell* source) {
+    spQueue q(totalCells);
+    bool* added = new bool[totalCells];
+    int* cameFrom = new int[totalCells];
+    for (int i = 0 ; i < totalCells ; ++i) {
+        added[i] = false;
+        cameFrom[i] = -1;
+    }
+    
+    q.push(source);
+    added[source->index] = true;
+    cameFrom[source->index] = -1;
+
+    Cell* goal;
+    while(!q.empty()) {
+        Cell* current = q.front();
+        q.pop();
+        ++bfsTraversedNodes;
+        if (!current->visited) {
+            goal = current;
+            break;
+        }
+
+        for (short i = 0 ; i < 4 && current->adjCells[i] != nullptr ; ++i) {
+            Cell* adj = current->adjCells[i];
+            if (added[adj->index]) continue;
+            if (adj == recharger) continue;
+
+            q.push(adj);
+            cameFrom[adj->index] = current->index;
+            added[adj->index] = true;
+        }
+    }
+
+    constructPath(path, cameFrom, goal);
+
+    delete [] added;
+    delete [] cameFrom;
 };
 
 void RobotMap::findClosestUnvisitedToR(vector<Cell*> &path, int lastIncIndex) {
@@ -275,6 +304,33 @@ void RobotMap::findClosestUnvisitedToR(vector<Cell*> &path, int lastIncIndex) {
     }
 
     DqPathWrapper* d = findMinimumPathToR(closestUnvisited, lastIncIndex);
+    deque<Cell*> &dq = d->path;
+
+    // convert deque path to path for robot
+    path.clear();
+    while(dq.size() > 0) {
+        path.push_back(dq.front());
+        dq.pop_front();
+    }
+
+    delete d;
+};
+
+void RobotMap::findFarestUnvisitedToR(vector<Cell*> &path, int lastIncIndex) {
+
+    DijkData &dijkData = *(allDijkData[lastIncIndex]);
+    Cell* farestUnvisited;
+    while(true) {
+        farestUnvisited = dijkData.unvisited.back();
+        if (farestUnvisited->visited) dijkData.unvisited.pop_back();
+        else break;
+        if (dijkData.unvisited.size() == 0) {
+            string errormessage = "dijkData.unvisited.size() == 0";
+            throw runtime_error(errormessage);
+        }
+    }
+
+    DqPathWrapper* d = findMinimumPathToR(farestUnvisited, lastIncIndex);
     deque<Cell*> &dq = d->path;
 
     // convert deque path to path for robot
@@ -305,23 +361,48 @@ void RobotMap::randomShortestWayHome(vector<Cell*> &path, Cell* current) {
     delete d;
 };
 
-Cell* RobotMap::randomStart() {
-    int neighborNumber = adjCells[recharger->index].size();
-    int useNeighborIndex = 0;
+Cell* RobotMap::getRecharger() {
+    return recharger;
+};
 
-    if (neighborNumber > 1) {
-        useNeighborIndex = rndFrom0To(neighborNumber-1);
+Cell* RobotMap::closestUnvisited(int lastIncIndex) {
+    DijkData &dijkData = *(allDijkData[lastIncIndex]);
+    Cell* closestUnvisited;
+    while(true) {
+        closestUnvisited = dijkData.unvisited.front();
+        if (closestUnvisited->visited) dijkData.unvisited.pop_front();
+        else break;
+        if (dijkData.unvisited.size() == 0) {
+            string errormessage = "dijkData.unvisited.size() == 0";
+            throw runtime_error(errormessage);
+        }
+    }
+    return closestUnvisited;
+};
+
+Cell* RobotMap::randomStart() {
+    short maxIndex = 3;
+    for (short i = 0 ; i < 4; ++i) {
+        if (recharger->adjCells[i] == nullptr) {
+            maxIndex = i - 1;
+            break;
+        }
     }
 
-    return adjCells[recharger->index][useNeighborIndex];
+    int useNeighborIndex = 0;
+    if (maxIndex > 0) {
+        useNeighborIndex = rndFrom0To(maxIndex);
+    }
+
+    return recharger->adjCells[useNeighborIndex];
 };
 
 Cell* RobotMap::unvisitedAdjacent(Cell* cell) {
     int* &dist = allDijkData[-1]->distanceToR;
-    vector<Cell*> &adjs = adjCells[cell->index];
+    Cell* (&adjs) [4] = cell->adjCells;
 
     vector<Cell*> adjs_S, adjs_EG;
-    for (short i = 0 ; i < adjs.size() ; ++i) {
+    for (short i = 0 ; i < 4 && adjs[4] != nullptr ; ++i) {
         if (adjs[i]->visited) continue;
         if (dist[adjs[i]->index] < dist[cell->index]) {
             adjs_S.push_back(adjs[i]);
@@ -346,17 +427,17 @@ Cell* RobotMap::unvisitedAdjacent(Cell* cell) {
 Cell* RobotMap::unvisitedAdj_v2(Cell* source) {
     int* &dist = allDijkData[-1]->distanceToR;
     
-    vector<Cell*> &adjs = adjCells[source->index];
+    Cell* (&adjs) [4] = source->adjCells;
 
-    adjs_with_visitedAdjs.clear();
+    adjs_with_visitedAdjs.clear(); // better choice
     adjs_without_visitedAdjs.clear();
 
-    for (short i = 0 ; i < adjs.size() ; ++i) {
+    for (short i = 0 ; i < 4 && adjs[i] != nullptr ; ++i) {
         Cell* adj = adjs[i];
         if (adj->visited) continue;
         bool hasVisitedAdj = false;
-        vector<Cell*> &adjsOfadj = adjCells[adj->index];
-        for (short j = 0 ; j < adjsOfadj.size() ; ++j) {
+        Cell* (&adjsOfadj)[4] = adj->adjCells;
+        for (short j = 0 ; j < 4 && adjsOfadj[j] != nullptr ; ++j) {
             if (adjsOfadj[j] == source) continue;
             if (adjsOfadj[j]->visited) {
                 hasVisitedAdj = true;
@@ -374,7 +455,7 @@ Cell* RobotMap::unvisitedAdj_v2(Cell* source) {
     if (!adjs_with_visitedAdjs.empty()) {
         v = &adjs_with_visitedAdjs;
     } else {
-        v = &adjs_with_visitedAdjs;
+        v = &adjs_without_visitedAdjs;
     }
 
     adjs_S.clear();
@@ -388,9 +469,14 @@ Cell* RobotMap::unvisitedAdj_v2(Cell* source) {
         }
     }
 
-    if (adjs_S.empty() && adjs_EG.empty()) return nullptr;
-    if (!adjs_EG.empty()) v = &adjs_EG;
-    else v = &adjs_S;
+    if (adjs_S.empty() && adjs_EG.empty()) {
+        return nullptr;
+    }
+    if (!adjs_EG.empty()) {
+        v = &adjs_EG;
+    } else {
+        v = &adjs_S;
+    }
 
     short index = 0;
     if ((*v).size() > 1) {
@@ -401,13 +487,13 @@ Cell* RobotMap::unvisitedAdj_v2(Cell* source) {
 }
 
 Cell* RobotMap::unvisitedAdj_v3(Cell* source) {
-    vector<Cell*> &adjs = adjCells[source->index];
+    Cell* (&adjs)[4] = source->adjCells;
     int* &dist = allDijkData[-1]->distanceToR;
 
     Cell* candidate[3];
     short score[3] {0, 0, 0};
     short index = 0;
-    for (short k = 0 ; k < adjs.size() ; ++k) {
+    for (short k = 0 ; k < 4 && adjs[k] != nullptr ; ++k) {
         if (!adjs[k]->visited) {
             if (index > 2) {
                 string message = "index > 2";
@@ -433,11 +519,39 @@ Cell* RobotMap::unvisitedAdj_v3(Cell* source) {
 }
 
 Cell* RobotMap::unvisitedAdj_fatest(Cell* source) {
-    vector<Cell*> &adjs = adjCells[source->index];
-    for (short k = 0 ; k < adjs.size() ; ++k) {
-        if (!adjs[k]->visited) return adjs[k];
+    for (short k = 0 ; k < 4 && source->adjCells[k] != nullptr ; ++k) {
+        if (source->adjCells[k] == recharger) continue;
+        if (!source->adjCells[k]->visited) return source->adjCells[k];
     }
     return nullptr;
+};
+
+Cell* RobotMap::unvisitedAdj_min(Cell* source) {
+    int* &dist = allDijkData[-1]->distanceToR;
+    int minDist = MAXINT;
+    int useIndex = -1;
+    for (short k = 0 ; k < 4 && source->adjCells[k] != nullptr ; ++k) {
+        if (source->adjCells[k] == recharger) continue;
+        if (source->adjCells[k]->visited) continue;
+        if (dist[source->adjCells[k]->index] < minDist) {
+            minDist = dist[source->adjCells[k]->index];
+            useIndex = k;
+        }
+    }
+    if (useIndex == -1) return nullptr;
+    else return source->adjCells[useIndex];
+};
+
+int RobotMap::getTotalCells() {
+    return totalCells;
+};
+
+int RobotMap::distanceToRecharger(int cellIndex) {
+    return distToR[cellIndex];
+};
+
+int RobotMap::distanceToRecharger(Cell* cell) {
+    return distToR[cell->index];
 };
 
 DijkData::DijkData() {};
@@ -459,7 +573,8 @@ DijkData::~DijkData() {
 void RobotMap::calcDijkRespectTo(int indexAdjToR) {
 
     clearPQ(openSet);
-    // priority_queue<Qmember> openSet;
+    bool* opensetFlag = new bool[totalCells];
+    bool* closedSetFlag = new bool[totalCells];
 
     DijkData* dijkData = new DijkData(indexAdjToR, totalCells);
     allDijkData[indexAdjToR] = dijkData;
@@ -479,7 +594,7 @@ void RobotMap::calcDijkRespectTo(int indexAdjToR) {
         openSet.emplace(recharger, 0);
         opensetFlag[recharger->index] = true;
     } else {
-        adjToR = cells->cells[indexAdjToR];
+        adjToR = &(cells[indexAdjToR]);
         closedSetFlag[recharger->index] = true;
         dist[adjToR->index] =1;
         openSet.emplace(adjToR, dist[adjToR->index]);
@@ -499,11 +614,12 @@ void RobotMap::calcDijkRespectTo(int indexAdjToR) {
         openSet.pop();
         opensetFlag[current->index] = false;
         closedSetFlag[current->index] = true;
-        unvisited.push_back(current);
+        if (indexAdjToR != -1) {
+            unvisited.push_back(current);
+        }
         
-        // for each neighbor of current
-        for (int i = 0 ; i < adjCells[current->index].size() ; ++i) {
-            neighbor = adjCells[current->index][i];
+        for (short i = 0 ; i < 4 && current->adjCells[i] != nullptr ; ++i) {
+            neighbor = current->adjCells[i];
 
             // if neighbor in closed set
             if (closedSetFlag[neighbor->index]) continue;
@@ -531,6 +647,9 @@ void RobotMap::calcDijkRespectTo(int indexAdjToR) {
             }
         }
     }
+
+    delete [] opensetFlag;
+    delete [] closedSetFlag;
 };
 
 void RobotMap::findRandomShortestWayHome(_tmpPathWrapper* pathWrapper, Cell* source) {
@@ -547,8 +666,9 @@ void RobotMap::findRandomShortestWayHome(_tmpPathWrapper* pathWrapper, Cell* sou
         cellsMinToR.clear();
         minDistance = dist[current->index];
 
-        vector<Cell*> &adjs = adjCells[current->index];
-        for (short i = 0 ; i < adjs.size(); ++i) {
+        // vector<Cell*> &adjs = adjCells[current->index];
+        Cell* (&adjs)[4] = current->adjCells;
+        for (short i = 0 ; i < 4 && adjs[i] != nullptr ; ++i) {
             if (dist[adjs[i]->index] > minDistance) continue;
             if (dist[adjs[i]->index] < minDistance) {
                 minDistance = dist[adjs[i]->index];
@@ -584,12 +704,12 @@ void RobotMap::findWayHomeViaInc(DqPathWrapper* dqPathWrapper,
         cellsMinToR.clear();
         minDistance = dist[current->index];
 
-        vector<Cell*> &adjs = adjCells[current->index];
-        for (short i = 0 ; i < adjs.size(); ++i) {
+        Cell* (&adjs) [4] = current->adjCells;
+        for (short i = 0 ; i < 4 && adjs[i] != nullptr ; ++i) {
             
+            if (adjs[i] == recharger && lastIncIndex != -1 && current->index != lastIncIndex) continue;
             if (dist[adjs[i]->index] > minDistance) continue;
             if (dist[adjs[i]->index] < minDistance) {
-                if (adjs[i] == recharger && lastIncIndex != -1 && current->index != lastIncIndex) continue;
                 minDistance = dist[adjs[i]->index];
                 cellsMinToR.clear();
             }
@@ -642,7 +762,22 @@ DqPathWrapper* RobotMap::findMinimumPathToR(Cell* source, int indexViaCellAdjToR
     return d;
 };
 
-void RobotMap::constructPath(vector<Cell*> &path, int* cameFrom, Cell* current) {
+inline void RobotMap::constructPath(vector<Cell*> &path, int* cameFrom, Cell* current) {
+    int currentIndex = current->index;
+    path.clear();
+    path.push_back(current);
+    
+    while(true) {
+        // if current does not exist in cameFrom
+        if (cameFrom[currentIndex] == -1) break;
+
+        currentIndex = cameFrom[currentIndex];
+        path.push_back(&(cells[currentIndex]));
+    }
+};
+
+inline void RobotMap::constructPath(vector<Cell*> &path, vector<int> &cameFrom, Cell* current) {
+    cout << endl << "-- using constructPath vector cameFrom version" << endl;
     int currentIndex = current->index;
     path.clear();
     path.push_back(current);
@@ -653,7 +788,7 @@ void RobotMap::constructPath(vector<Cell*> &path, int* cameFrom, Cell* current) 
         if (cameFrom[currentIndex] == -1) break;
 
         currentIndex = cameFrom[currentIndex];
-        path.push_back(cells->cells[currentIndex]);
+        path.push_back(&(cells[currentIndex]));
     }
 };
 
@@ -664,16 +799,50 @@ inline short RobotMap::rndFrom0To(short num) {
     throw std::runtime_error("Error: input num > 3, which is not allowed.");
 };
 
+int RobotMap::getIndex(short i, short j) {
+    // using binary search
+    int left = 0, right = cellCoords.size() - 1;
+    int mid;
+    while(left <= right) {
+        mid = left + (right-left)/2;
+        coordinate &cm = cellCoords[mid];
+        if (i == cm.i && j == cm.j) return mid;
+        if (i < cm.i || (i == cm.i && j < cm.j)) {
+            right = mid - 1;
+        } else if (i > cm.i || (i == cm.i && j > cm.j)) {
+            left = mid + 1;
+        }
+    }
+    return -1;
+};
+
 void RobotMap::printPath(vector<Cell*> &path) {
     cout << "           ";
     cout << "There are " << path.size() << " cells in the path : ";
     for (int i = path.size() - 1, j = 0 ; i >= 0 ; --i, ++j) {
         if (j%4 == 0) cout << endl << "           ";
-        cout << "(" << path[i]->i << ", " << path[i]->j << ")";
+        coordinate &c = cellCoords[path[i]->index];
+        cout << "(" << c.i << ", " << c.j << ")";
         if (i>0) cout << "  ->  ";
     }
     cout << endl;
 };
+
+void RobotMap::printPath(deque<Cell*> path) {
+    cout << "           ";
+    cout << "There are " << path.size() << " cells in the path : ";
+    int count = 0;
+    while(!path.empty()) {
+        Cell* cell = path.back();
+        path.pop_back();
+        if (count % 10 == 0) cout << endl << "           ";
+        coordinate &c = cellCoords[cell->index];
+        cout << "(" << c.i << ", " << c.j << ")";
+        if (!path.empty()) cout << "  ->  ";
+        ++count;
+    }
+    cout << endl;
+}
 
 void RobotMap::printDijkData() {
     Cell* cell;
@@ -687,12 +856,11 @@ void RobotMap::printDijkData() {
 
         for (short i = 0 ; i < rows; ++i) {
             for (short j = 0 ; j < columns ; ++j) {
-                cell = cells->get(i, j);
+                cell = &(cells[getIndex(i ,j)]);
                 if (!cell) {
                     cout << "XXX ";
                     continue;
                 }
-                //cellInfo(cell);
                 dist = dijk.distanceToR[cell->index];
                 if (dist < 10) {
                     cout << "  " << dist << " ";
@@ -709,7 +877,8 @@ void RobotMap::printDijkData() {
 };
 
 void RobotMap::cellInfo(Cell* cell) {
+    coordinate &c = cellCoords[cell->index];
     cout << "cell["<<cell->index<<"]: "
-        << "("<<cell->i<<", "<<cell->j<<"), "
+        << "("<<c.i<<", "<<c.j<<"), "
         << "visited("<<(cell->visited? "True" : "False") << ").";
 };

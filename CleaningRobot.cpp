@@ -1,12 +1,15 @@
 #include <vector>
 #include <chrono>
 #include <functional>
+#include <sstream>
+#include <cstdio>
+// #include <map>
 #include "CleaningRobot.hpp"
 using namespace std;
 
 CleaningRobot::CleaningRobot() {};
 CleaningRobot::~CleaningRobot() {
-    if (map) delete map;
+    if (rmap) delete rmap;
 };
 
 void CleaningRobot::readFloorData(int argc, char* argv[]) {
@@ -28,11 +31,11 @@ void CleaningRobot::readFloorData(int argc, char* argv[]) {
     short rows = 0 , columns = 0;
     readInFile >> rows >> columns >> maxBattery;
 
-    map = new RobotMap(rows, columns);
-    map->readFloorData(readInFile);
-    map->processData();
+    rmap = new RobotMap(rows, columns);
+    rmap->readFloorData(readInFile);
+    rmap->processData();
 
-    finalPath.reserve(map->totalCells*3);
+    finalPath.reserve(101000);
 }; 
 
 bool CleaningRobot::hasError() {
@@ -45,89 +48,123 @@ int CleaningRobot::printError() {
 };
 
 void CleaningRobot::clean() {
-    int unvisitedCount = map->totalCells;
+    constexpr auto &&now = std::chrono::high_resolution_clock::now;
+    // ofstream o(filePath + "/path.log");
+    int unvisitedCount = rmap->getTotalCells();
     bool isGoingHome = false;
     bool setPathToRecharger = false;
     int battery = 0;
-    Cell* current = map->recharger;
-    Cell* recharger = map->recharger;
+    Cell* recharger = rmap->getRecharger();
+    Cell* current = recharger;
     Cell* next = nullptr;
     Cell* lastIncToR = nullptr;
     Cell* destination = nullptr;
     vector<Cell*> path;
     Cell*(RobotMap::*unvisitedAdj)(Cell*);
+    void(RobotMap::*unvClosest)(vector<Cell*>&, Cell*);
 
-    if (map->edges > 498000) {
-        unvisitedAdj = map->unvisitedAdj_fatest;
-        cout << endl << "   switching to algorithm: unvisitedAdj_fatest" << endl;
+    if (rmap->edges > 400000) {
+        unvisitedAdj = rmap->unvisitedAdj_min;
+        unvClosest = rmap->findClosestUnvisitedv3;
+        cout << endl << "   switching to faster algorithm... " << endl;
     } else {
-        unvisitedAdj = map->unvisitedAdj_v2;
-        cout << endl << "   use default algorithm: unvisitedAdj_v2" << endl;
+        unvisitedAdj = rmap->unvisitedAdj_v2;
+        unvClosest = rmap->findClosestUnvisitedv3;
+        cout << endl << "   use default algorithm..." << endl;
     }
-    // std::function<Cell*(Cell*)> &unvisitedAdj = estTime > 20 ? map->unvisitedAdj_fatest : map->unvisitedAdj_v2;
     
     path.reserve(battery);
 
     recharger->visited = true;
     --unvisitedCount;
+    // int count = 0;
+    // string m;
+    auto start = now();
+    chrono::duration<double> elapsed = now() - start;
     while(unvisitedCount || current != recharger) {
-
+        bool atRecharger = false;
+        bool doingPath = false;
+        bool roaming = false;
+        bool setpathHome = false;
+        bool findUnvClosest = false;
         if (!current->visited) {
             current->visited = true;
             --unvisitedCount;
         }
 
+        // m = string("step ") + to_string(count) + ", "
+        //     + "current(" + to_string(rmap->cellCoords[current->index].i) + ", " + to_string(rmap->cellCoords[current->index].j) + "), "
+        //     + "unvisited: " + to_string(unvisitedCount) + ", "
+        //     + "battery: " + to_string(battery);
+        // o << m;
+        // o.flush();
+
         // 1. determine next movement
         // 1.1 robot is at recharger
         if (current == recharger) {
+            atRecharger = true;
+            // o << " -- At Recharger "; o.flush();
             battery = maxBattery;
             isGoingHome = false;
-
-            path.clear();
+            // o << " -- start if (lastIncToR == nullptr)"; o.flush();
             if (lastIncToR == nullptr) {
-                path.push_back(map->randomStart());
-
+                // o << " --randomStart"; o.flush();
+                path.clear();
+                path.push_back(rmap->randomStart());
             } else {
-                map->findClosestUnvisitedToR(path, lastIncToR->index);
+                // o << " -- findClosestUnvisitedToR"; o.flush();
+                rmap->findClosestUnvisitedToR(path, lastIncToR->index);
+                ++cFCUTR;
             }
 
             while(path.back() == current) {path.pop_back();}
             next = path.back();
+            if (!next) throw runtime_error("next is nullptr!");
+            // o << " -- At Recharger complete"; o.flush();
 
         // 1.2 robot is not at recharger
         } else {
-
+            // o << " -- not at recharger"; o.flush();
             // if robot has no goal now, robot is roaming
             if (next == nullptr) {
+                // o <<  " -- roaming "; o.flush();
 
                 // all the cells are visited
                 if (unvisitedCount == 0)  setPathToRecharger = true;
 
                 // still some cells not visited
                 else {
+                    roaming = true;
                     // has unvisited neighbor?
-                    next = (map->* unvisitedAdj)(current);
-                    // next = map->unvisitedAdj_v2(current);
-                    // next = map->unvisitedAdj_fatest(current);
-                    
+                    next = (rmap->* unvisitedAdj)(current);
+                    // o << " -- next: " << next; o.flush();
 
-                    if (next) setPathToRecharger = !enoughBattery(next, battery-1);
-                    else {
-                        path.clear();
-                        map->findClosestUnvisited(path, current);
+                    if (next) {
+                        // o << " -- has unvisited Adj "; o.flush();
+                        setPathToRecharger = !enoughBattery(next->index, battery-1);
+                        ++noUnvClosestCount;
+                    } else {
+                        // o << " -- unvClosest "; o.flush();
+                        findUnvClosest = true;
+                        (rmap->* unvClosest)(path, current);
+                        ++unvClosestCount;
                         
                         // check if battery is enough to go to destination
-                        if (enoughBattery(path.front(), battery-path.size()+1)) {
+                        if (enoughBattery(path.front()->index, battery-path.size()+1)) {
                             while(path.back() == current) {path.pop_back();}
                             next = path.back();
                         } else setPathToRecharger = true;
                     }
                 }
+            } else {
+                doingPath = true;
+                setPathToRecharger = !enoughBattery(next->index, battery-1);
             }
         }
-
+        
         if (setPathToRecharger) {
-            map->randomShortestWayHome(path, current);
+            // o << " -- setPathToRecharger "; o.flush();
+            rmap->randomShortestWayHome(path, current);
             while(path.back() == current) {path.pop_back();}
             next = path.back();
             isGoingHome = true;
@@ -136,9 +173,15 @@ void CleaningRobot::clean() {
         }
 
         // 2. move !
-        if (next == map->recharger) lastIncToR = current;
+        // o << " --start move"; o.flush();
+        // Cell* dest = path[0];
+        // o << ", dext(" << dest->index << "):"; o.flush();
+        // o << "(" << rmap->cellCoords[dest->index].i << ", " << rmap->cellCoords[dest->index].j << ") "; o.flush();
+        
+        if (next == recharger) lastIncToR = current;
         current = next;
 
+        // o << " --get next."; o.flush();
         while(!path.empty() && path.back() == current) {path.pop_back();}
         if (path.empty()) {
             next = nullptr;
@@ -147,34 +190,79 @@ void CleaningRobot::clean() {
         }
         
         // record current cell into final path.
-        finalPath.emplace_back(current->i, current->j);
+        finalPath.push_back(current->index);
+
+        if (finalPath.size() >= 100000) {
+            saveTmp();
+        }
         
         ++usingSteps;
         --battery;
+        // ++count;
+        // o << " --move complete" << endl; o.flush();
+        elapsed = now() - start;
+        if (atRecharger) {
+            sAtRecharger += elapsed.count() * 1000;
+        } else if (roaming) {
+            sRoaming += elapsed.count() * 1000;
+            if (findUnvClosest) {
+                sGoingNoneAdj += elapsed.count() * 1000;
+            } else {
+                sGoingAdj += elapsed.count() * 1000;
+            }
+        } else if (doingPath) {
+            sDoingPath += elapsed.count() * 1000;
+        } else {
+            sElse += elapsed.count() * 1000;
+        }
+        start = now();
     }
+    saveTmp();
 };
 
-void CleaningRobot::outputPath(int argc, char* argv[]) {
-    ofstream o(string(argv[1]) + "/final.path");
-    o << usingSteps << endl;
-
-    // vector<Cell*> &cells = map->cells->cells;
-    // for (int k = 0 ; k < pathIndices.size() ; ++k) {
-    //     o << cells[pathIndices[k]]->i << ' ' << cells[pathIndices[k]]->j << endl;
-    // }
-
-    for (int k = 0 ; k < finalPath.size() ; ++ k) {
-        o << finalPath[k].i << ' ' << finalPath[k].j << endl;
-    }
+void CleaningRobot::outputPath() {
+    ifstream i(filePath + "/tmpfile");
+    ofstream o(filePath + "/final.path");
+    o << usingSteps << endl << i.rdbuf();
+    i.close();
+    string fileName = filePath + "/tmpfile";
+    remove(fileName.c_str());
 };
 
 inline bool CleaningRobot::enoughBattery(Cell* cell, int battery) {
-    return battery >= map->distToR[cell->index];
+    return battery >= rmap->distanceToRecharger(cell);
 };
+inline bool CleaningRobot::enoughBattery(int cellIndex, int battery) {
+    return battery >= rmap->distanceToRecharger(cellIndex);
+};
+
+
+void CleaningRobot::saveTmp() {
+    ofstream o(filePath+"/tmpfile", ios_base::app);
+    stringstream ss;
+    for (int i = 0 ; i < finalPath.size(); ++i) {
+        ss << rmap->cellCoords[finalPath[i]].i << ' ' << rmap->cellCoords[finalPath[i]].j << endl;
+    }
+    o << ss.rdbuf();
+    finalPath.clear();
+};
+
+int CleaningRobot::totalSteps() {
+    return usingSteps;
+}
 
 void CleaningRobot::test() {
 
-    // map->calculateDistanceToR();
-    // map->printAllDistance();
 
+};
+
+void CleaningRobot::analysis() {
+    cout << "   ---  sAtRecharger : " << (int) sAtRecharger << " ms" << endl;
+    cout << "        -- count: " << cFCUTR << endl;
+    cout << "   ---  sDoingPath : " << (int) sDoingPath << " ms" << endl;
+    cout << "   ---  sRoaming : " << (int) sRoaming << " ms" << endl;
+    cout << "        -- sGoingAdj: " << noUnvClosestCount << ", " << (int) sGoingAdj << " ms" << endl;
+    cout << "        -- sGoingNoneAdj: " << unvClosestCount << ", " << (int) sGoingNoneAdj << " ms, bfs traversed nodes:" << rmap->bfsTraversedNodes << endl;
+    cout << "   ---  sElse : " << (int) sElse << " ms" << endl;
+    cout << "   ---  sTotal : " << (int) (sAtRecharger+sDoingPath+sRoaming+sElse) << " ms" << endl;
 };

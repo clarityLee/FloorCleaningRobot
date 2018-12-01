@@ -169,6 +169,7 @@ void VerifyBot::verify(char* argv[]) {
         if (i == ri && j == rj && k-2 >= 0
             && (path[k-2].i != next.i || path[k-2].j != next.j)) {
             o << "   Error: Current is at recharger, but next step  (" << next.i << ", " << next.j << ")  is going out via illeage direction." << endl;
+            o << "          You shall not pass recharger!!" << endl;
             break;
         }
 
@@ -193,9 +194,9 @@ void VerifyBot::verify(char* argv[]) {
     }
 
     if (hasError) {
-        cout << "NO!! Steps verification complete. There are errors. Please see verify.log" << endl;
+        cout << "NO ~~ !! Steps verification failed. There are errors. Please see verify.log" << endl;
     } else {
-        cout << "OK!! Steps verification complete. final.path is legal." << endl;
+        cout << "OK!! Good !! Steps verification complete. final.path is legal." << endl;
     }
 
 };
