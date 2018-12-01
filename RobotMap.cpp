@@ -150,16 +150,9 @@ void RobotMap::processData() {
     cout << "    - RobotMap::processData : adjacency list of all cells completed in : "
         << (int) (elapsed.count() * 1000) << " ms." << endl;
 
-    resizePQ(openSet, totalCells);
-
     // using dijkstra to calculate distance
     phaseStartTime = now();
-    calcDijkRespectTo(-1); // respect to nothing
-    distToR = allDijkData[-1]->distanceToR;
-    for (short k = 0 ; k < 4 && recharger->adjCells[k] != nullptr; ++k) {
-        calcDijkRespectTo(recharger->adjCells[k]->index);
-    }
-    clearPQ(openSet); shrinkToFit(openSet);
+    calcAllDijk();
     elapsed = now() - phaseStartTime;
     cout << "    - RobotMap::processData : calculating all cell distances to recharger. / Completed in : "
          << (int) (elapsed.count() * 1000) << " ms." << endl;
@@ -169,6 +162,14 @@ void RobotMap::processData() {
         delete rawData[i];
     }
     delete [] rawData;
+};
+
+void RobotMap::resetForRefine() {
+    bfsTraversedNodes = 0;
+    for (int i = 0 ; i < cells.size() ; ++i) {
+        cells[i].visited = false;
+    }
+    calcAllDijk();
 };
 
 void RobotMap::findClosestUnvisited(vector<Cell*> &path, Cell* source) {
@@ -568,6 +569,17 @@ DijkData::DijkData (int _indexAdjToR, int totalCells) {
 DijkData::~DijkData() {
     if (distanceToR) delete [] distanceToR;
     if (cameFrom) delete [] cameFrom;
+};
+
+void RobotMap::calcAllDijk() {
+    allDijkData.clear();
+    resizePQ(openSet, totalCells);
+    calcDijkRespectTo(-1); // respect to nothing
+    distToR = allDijkData[-1]->distanceToR;
+    for (short k = 0 ; k < 4 && recharger->adjCells[k] != nullptr; ++k) {
+        calcDijkRespectTo(recharger->adjCells[k]->index);
+    }
+    clearPQ(openSet); shrinkToFit(openSet);
 };
 
 void RobotMap::calcDijkRespectTo(int indexAdjToR) {

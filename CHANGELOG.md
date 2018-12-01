@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.0.5 - 2018-12-01
+## Added
+- The Robot now can do multiple round of refinement within 25 secs up to 100 rounds.
+
 ## 0.0.4 - 2018-12-01
 ## Changed
 - Set limit to path result buffer. Once the limitation is reached, append the data to a tmp file. The program will later convert the tmp file into a formal output result.
