@@ -25,15 +25,16 @@ int main(int argc, char* argv[]) {
     robot.clean();
     elapsed = now() - phaseStartTime;
     cout << "   completed in : " << (int) (elapsed.count() * 1000) << " ms." << endl;
+    robot.analysis();
 
     cout << "** Robot is saving path file.....";
     phaseStartTime = now();
-    robot.outputPath(argc, argv);
+    robot.outputPath();
     elapsed = now() - phaseStartTime;
     cout << "completed in : " << (int) (elapsed.count() * 1000) << " ms." << endl;
 
     elapsed = now() - programStartTime;
-    cout << "** Total used time : " << (int) (elapsed.count() * 1000) << " ms." << endl;
+    cout << "** Total used time : " << (int) (elapsed.count() * 1000) << " ms, total steps: " << robot.totalSteps() << endl;
     cout << endl;
     
     return 0;

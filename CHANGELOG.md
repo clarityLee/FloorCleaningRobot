@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.0.4 - 2018-12-01
+## Changed
+- Set limit to path result buffer. Once the limitation is reached, append the data to a tmp file. The program will later convert the tmp file into a formal output result.
+- CleaningRobot: Add analysis() function to CleaningRobot.hpp to show detail execution time.
+- Robotmap: Use vector<Cell> instead of vector<Cell*> to re-arrange all cells in contiguous memory.
+- Robotmap : Split infrequently used coordinate of cells to a separate container to reduce the size of vector<Cell>.
+- Robotmap : combine original adjacent list (in vector form) into each cell (in array form).
+- Robotmap : Introduce BFS algorithm to replace Dijkstra when finding closest unvisited cell when roaming.
+- Robotmap : Introduce unvisitedAdj_min to find unvisited adjacent cell which prefer minimum distance to recharger to reduce fragment of the unvisited in the map.
+
 ## 0.0.3 - 2018-11-30
 ## Added
 - When robot is roaming, dynamically choose different algorithm of finding unvisited adjacent cell according to total edges.
