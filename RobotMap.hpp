@@ -69,6 +69,7 @@ public:
     ~RobotMap();
     void readFloorData(std::ifstream&);
     void processData();
+    void resetForRefine();
     
     void findClosestUnvisitedv3(vector<Cell*> &path, Cell* source); // bfs, using !!
     void findClosestUnvisitedToR(vector<Cell*> &path, int lastIncIndex); // using !!
@@ -100,7 +101,7 @@ public:
 
 private:
     int totalCells = 0;
-    short randomHomingPaths = 20;
+    short randomHomingPaths = 40;
     short rows = 0, columns = 0;
     char** rawData;
     bool hasMultiplePaths = false;
@@ -121,6 +122,7 @@ private:
 
     priority_queue<Qmember> openSet;
     map<int, DijkData*> allDijkData;
+    void calcAllDijk();
     void calcDijkRespectTo(int indexAdjToR); // using !!
     void findRandomShortestWayHome(_tmpPathWrapper* pathWrapper, Cell* source); // (not using)
     void findWayHomeViaInc(DqPathWrapper*, Cell* source, const int lastIncIndex); // using !!

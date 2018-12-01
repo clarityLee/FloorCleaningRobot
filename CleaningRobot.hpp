@@ -12,11 +12,14 @@ public:
     int printError();
     void readFloorData(int argc, char* argv[]);
     void clean();
+    void refine();
     void outputPath();
+    void cleanTmpFile();
     void test();
     void analysis();
     int totalSteps();
 private:
+    bool isRefine = false;
     bool errorFlag = false;
     int maxBattery = 0;
     int usingSteps = 0;
@@ -24,7 +27,6 @@ private:
     RobotMap* rmap;
     string filePath;
 
-    int estTime = 0;
     double sAtRecharger = 0;
     double sDoingPath = 0;
     double sRoaming = 0;
@@ -34,9 +36,10 @@ private:
     int cFCUTR = 0;
     int noUnvClosestCount = 0;
     int unvClosestCount = 0;
-    void saveTmp();
     vector<int> finalPath;
-    
+
+    void saveTmp();
+    void resetForRefine();
     inline bool enoughBattery(Cell* cell, int battery);
     inline bool enoughBattery(int cellIndex, int battery);
 };

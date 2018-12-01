@@ -63,14 +63,16 @@ void CleaningRobot::clean() {
     Cell*(RobotMap::*unvisitedAdj)(Cell*);
     void(RobotMap::*unvClosest)(vector<Cell*>&, Cell*);
 
-    if (rmap->edges > 400000) {
+    if (rmap->edges > 600000) {
         unvisitedAdj = rmap->unvisitedAdj_min;
         unvClosest = rmap->findClosestUnvisitedv3;
-        cout << endl << "   switching to faster algorithm... " << endl;
+        if (!isRefine)
+            cout << endl << "   edges: " << rmap->edges << ", switching to faster algorithm... " << endl;
     } else {
         unvisitedAdj = rmap->unvisitedAdj_v2;
         unvClosest = rmap->findClosestUnvisitedv3;
-        cout << endl << "   use default algorithm..." << endl;
+        if (!isRefine)
+            cout << endl << "   edges: " << rmap->edges << ", use default algorithm..." << endl;
     }
     
     path.reserve(battery);
@@ -220,11 +222,19 @@ void CleaningRobot::clean() {
     saveTmp();
 };
 
+void CleaningRobot::refine() {
+    resetForRefine();
+    clean();
+};
+
 void CleaningRobot::outputPath() {
     ifstream i(filePath + "/tmpfile");
     ofstream o(filePath + "/final.path");
     o << usingSteps << endl << i.rdbuf();
     i.close();
+};
+
+void CleaningRobot::cleanTmpFile() {
     string fileName = filePath + "/tmpfile";
     remove(fileName.c_str());
 };
@@ -245,6 +255,26 @@ void CleaningRobot::saveTmp() {
     }
     o << ss.rdbuf();
     finalPath.clear();
+};
+
+void CleaningRobot::resetForRefine() {
+    isRefine = true;
+    errorFlag = false;
+    usingSteps = 0;
+    errorMessage.clear();;
+
+    sAtRecharger = 0;
+    sDoingPath = 0;
+    sRoaming = 0;
+    sGoingAdj = 0;
+    sGoingNoneAdj = 0;
+    sElse = 0;
+    cFCUTR = 0;
+    noUnvClosestCount = 0;
+    unvClosestCount = 0;
+    finalPath.clear();
+
+    rmap->resetForRefine();
 };
 
 int CleaningRobot::totalSteps() {
