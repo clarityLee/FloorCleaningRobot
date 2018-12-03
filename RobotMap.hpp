@@ -72,6 +72,10 @@ public:
     void resetForRefine();
     
     void findClosestUnvisitedv3(vector<Cell*> &path, Cell* source); // bfs, using !!
+
+    /** returns true if has path with enough battery. The path will also filled with cells.
+        returns false if there's no path with enough battery. The path will be cleared. **/
+    bool findClosestUnvisitedv4(vector<Cell*> &path, Cell* source, int battery); // bfs, find with battery lmit
     void findClosestUnvisitedToR(vector<Cell*> &path, int lastIncIndex); // using !!
     void randomShortestWayHome(vector<Cell*> &path, Cell* current); // using !!
     Cell* getRecharger(); // using!!

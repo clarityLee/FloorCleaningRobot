@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.0.6 - 2018-12-03
+#Added
+- When doing BFS to search for the closest unvisited cells, the remaining battery is take into consider. The process will terminate in advance and return empty path when battery is not enough, so that the algorithm can skip a lot of unnecessary search.
+## Changed
+- Extend the refinement round up to 5000.
+- On refinement round, if the total paths is small enough, then the program will not save the paths to a tmp file during the process.
+
+## Fixed
+- Fix the assignment of function pointer so that is can be compiled by Xcode's clang c++ compiler.
+
+
 ## 0.0.5 - 2018-12-01
 ## Added
 - The Robot now can do multiple round of refinement within 25 secs up to 100 rounds.

@@ -3,8 +3,11 @@
 #include "CleaningRobot.hpp"
 using namespace std;
 
+int getDigit(int n);
 int main(int argc, char* argv[]) {
     constexpr auto &&now = std::chrono::high_resolution_clock::now;
+    const bool refine = true;
+    const short refindRound = 5000;
 
     auto programStartTime = now();
     int oneTime = 0, totalTime = 0, count = 1;
@@ -29,7 +32,7 @@ int main(int argc, char* argv[]) {
     robot.clean();
     elapsed = now() - phaseStartTime;
     cout << "   completed in : " << (int) (elapsed.count() * 1000) << " ms." << endl;
-    robot.analysis();
+    // robot.analysis();
 
     cout << "** Robot is saving file.....";
     phaseStartTime = now();
@@ -45,17 +48,19 @@ int main(int argc, char* argv[]) {
     cout << endl;
 
     
-    if (limitTime - totalTime > oneTime) {
+    if (refine && limitTime - totalTime > oneTime) {
         cout << "** Robot is now refining the result," << endl 
-            << "   the refining process will be limited within 25 sec or 100 rounds," << endl
-            << "   please wait";
+            << "   the refining process will be limited within 25 sec or " << refindRound << " rounds," << endl
+            << "   please wait... refining round : " << count << flush;
 
-        while (limitTime - totalTime > oneTime && count <= 100) {
-            cout << ".";
+        while (limitTime - totalTime > oneTime && count <= refindRound) {
+            int prev_digit = getDigit(count-1);
+            prev_digit = prev_digit ? prev_digit : 1;
+            cout << string(prev_digit, '\b') << count << flush;
             robot.refine();
             if (robot.totalSteps() < minSteps) {
                 minSteps = robot.totalSteps();
-                robot.outputPath();
+                robot.refineOutput();
             }
             robot.cleanTmpFile();
             ++count;
@@ -66,4 +71,13 @@ int main(int argc, char* argv[]) {
     }
     
     return 0;
+};
+
+inline int getDigit(int n) {
+    int digits = 0;
+    while (n) {
+        n /= 10;
+        digits++;
+    }
+    return digits;
 };
