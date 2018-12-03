@@ -13,6 +13,7 @@ public:
     void readFloorData(int argc, char* argv[]);
     void clean();
     void refine();
+    void refineOutput();
     void outputPath();
     void cleanTmpFile();
     void test();
@@ -21,6 +22,7 @@ public:
 private:
     bool isRefine = false;
     bool errorFlag = false;
+    bool hasTmpFile = false;
     int maxBattery = 0;
     int usingSteps = 0;
     string errorMessage;

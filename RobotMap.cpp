@@ -86,6 +86,16 @@ RobotMap::RobotMap(short r, short c) : rows(r), columns(c),
 };
 
 RobotMap::~RobotMap() {
+    if (rawData) {
+        for (int i = 0 ; i < rows ; ++i) {
+            if (rawData[i]) {
+                delete [] rawData[i];
+                rawData[i] = nullptr;
+            }
+        }
+        delete [] rawData;
+        rawData = nullptr;
+    }
     for(map<int, DijkData*>::iterator it = allDijkData.begin(); it != allDijkData.end(); ++it) {
         delete it->second;
         it->second = nullptr;
@@ -120,7 +130,7 @@ void RobotMap::processData() {
     constexpr auto &&now = std::chrono::high_resolution_clock::now;
 
     // construct adjacency list
-    cout << "    - RobotMap::processData : construct adjacency list of all cells..." << endl;
+    cout << "    - RobotMap::processData : construct adjacency list of all cells..." << flush;
     auto phaseStartTime = now();
     for (short i = 0 ; i < rows ; ++i) {
         for (short j = 0 ; j < columns ; ++j) {
@@ -147,7 +157,7 @@ void RobotMap::processData() {
     }
     edges/=2;
     chrono::duration<double> elapsed = now() - phaseStartTime;
-    cout << "    - RobotMap::processData : adjacency list of all cells completed in : "
+    cout << "completed in : "
         << (int) (elapsed.count() * 1000) << " ms." << endl;
 
     // using dijkstra to calculate distance
@@ -159,9 +169,11 @@ void RobotMap::processData() {
 
     // deallocate raw floor data
     for (short i = 0 ; i < rows ; ++i) {
-        delete rawData[i];
+        delete [] rawData[i];
+        rawData[i] = nullptr;
     }
     delete [] rawData;
+    rawData = nullptr;
 };
 
 void RobotMap::resetForRefine() {
@@ -290,8 +302,61 @@ void RobotMap::findClosestUnvisitedv3(vector<Cell*> &path, Cell* source) {
     delete [] cameFrom;
 };
 
-void RobotMap::findClosestUnvisitedToR(vector<Cell*> &path, int lastIncIndex) {
+bool RobotMap::findClosestUnvisitedv4(vector<Cell*> &path, Cell* source, int battery) {
+    spQueue q(totalCells);
+    bool outOfBattery = false;
+    bool hasPath = false;
+    bool* added = new bool[totalCells];
+    int* cameFrom = new int[totalCells];
+    for (int i = 0 ; i < totalCells ; ++i) {
+        added[i] = false;
+        cameFrom[i] = -1;
+    }
+    
+    q.push(source);
+    added[source->index] = true;
+    cameFrom[source->index] = -1;
+    ++battery;
 
+    Cell* goal = nullptr;
+    while(!q.empty()) {
+        Cell* current = q.front();
+        q.pop();
+        ++bfsTraversedNodes;
+
+        if (--battery == 0) {
+            outOfBattery = true;
+            break;
+        }
+        
+        if (!current->visited) {
+            goal = current;
+            break;
+        }
+
+        for (short i = 0 ; i < 4 && current->adjCells[i] != nullptr ; ++i) {
+            Cell* adj = current->adjCells[i];
+            if (added[adj->index]) continue;
+            if (adj == recharger) continue;
+
+            q.push(adj);
+            cameFrom[adj->index] = current->index;
+            added[adj->index] = true;
+        }
+    }
+
+    path.clear();
+    if (!outOfBattery && goal && battery >= distToR[goal->index]) {
+        constructPath(path, cameFrom, goal);
+        hasPath = true;
+    }
+
+    delete [] added;
+    delete [] cameFrom;
+    return hasPath;
+};
+
+void RobotMap::findClosestUnvisitedToR(vector<Cell*> &path, int lastIncIndex) {
     DijkData &dijkData = *(allDijkData[lastIncIndex]);
     Cell* closestUnvisited;
     while(true) {
@@ -403,7 +468,7 @@ Cell* RobotMap::unvisitedAdjacent(Cell* cell) {
     Cell* (&adjs) [4] = cell->adjCells;
 
     vector<Cell*> adjs_S, adjs_EG;
-    for (short i = 0 ; i < 4 && adjs[4] != nullptr ; ++i) {
+    for (short i = 0 ; i < 4 && adjs[i] != nullptr ; ++i) {
         if (adjs[i]->visited) continue;
         if (dist[adjs[i]->index] < dist[cell->index]) {
             adjs_S.push_back(adjs[i]);
@@ -572,6 +637,10 @@ DijkData::~DijkData() {
 };
 
 void RobotMap::calcAllDijk() {
+    for(map<int, DijkData*>::iterator it = allDijkData.begin(); it != allDijkData.end(); ++it) {
+        delete it->second;
+        it->second = nullptr;
+    }
     allDijkData.clear();
     resizePQ(openSet, totalCells);
     calcDijkRespectTo(-1); // respect to nothing
