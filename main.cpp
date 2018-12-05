@@ -7,7 +7,7 @@ int getDigit(int n);
 int main(int argc, char* argv[]) {
     constexpr auto &&now = std::chrono::high_resolution_clock::now;
     const bool refine = true;
-    const short refindRound = 5000;
+    const short refindRound = 10000;
 
     auto programStartTime = now();
     int oneTime = 0, totalTime = 0, count = 1;

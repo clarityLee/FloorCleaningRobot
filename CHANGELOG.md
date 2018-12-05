@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.0.7 - 2018-12-05
+## Changed
+- Change the refinment run up to 10000 rounds
+## Fixed
+- Fix the memory leak
+- Fix the battery limit on BFS algorithm
+
 ## 0.0.6 - 2018-12-03
 #Added
 - When doing BFS to search for the closest unvisited cells, the remaining battery is take into consider. The process will terminate in advance and return empty path when battery is not enough, so that the algorithm can skip a lot of unnecessary search.
