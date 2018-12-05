@@ -6,6 +6,7 @@
 #include <random>
 #include <queue>
 #include <deque>
+#include <memory>
 using namespace std;
 const int MAXINT = 2147483647;
 
@@ -129,8 +130,8 @@ private:
     void calcAllDijk();
     void calcDijkRespectTo(int indexAdjToR); // using !!
     void findRandomShortestWayHome(_tmpPathWrapper* pathWrapper, Cell* source); // (not using)
-    void findWayHomeViaInc(DqPathWrapper*, Cell* source, const int lastIncIndex); // using !!
-    DqPathWrapper* findMinimumPathToR(Cell* source, int indexViaCellAdjToR); // using !!
+    unique_ptr<DqPathWrapper> findWayHomeViaInc(Cell* source, const int lastIncIndex); // using !!
+    unique_ptr<DqPathWrapper> findMinimumPathToR(Cell* source, int indexViaCellAdjToR); // using !!
     inline void constructPath(vector<Cell*> &path, int* cameFrom, Cell* current); // using !!
     inline void constructPath(vector<Cell*> &path, vector<int> &cameFrom, Cell* current); // (not using)
     int getIndex(short i, short j); // using !!

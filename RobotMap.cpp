@@ -6,6 +6,7 @@
 #include <chrono>
 #include <queue>
 #include <deque>
+#include <memory>
 #include "RobotMap.hpp"
 using namespace std;
 
@@ -110,11 +111,9 @@ void RobotMap::readFloorData(std::ifstream &readInFile) {
         for (short j = 0 ; j < columns ; ++j) {
             readInFile >> rawData[i][j];
             if (rawData[i][j] == '0') {
-                // cells.push_back(new Cell(cellIndex++));
                 cells.emplace_back(cellIndex++);
                 cellCoords.emplace_back(i ,j);
             } else if (rawData[i][j] == 'R') {
-                // cells.push_back(new Cell(cellIndex++));
                 cells.emplace_back(cellIndex++);
                 cellCoords.emplace_back(i ,j);
                 recharger = &(cells.back());
@@ -308,6 +307,8 @@ bool RobotMap::findClosestUnvisitedv4(vector<Cell*> &path, Cell* source, int bat
     bool hasPath = false;
     bool* added = new bool[totalCells];
     int* cameFrom = new int[totalCells];
+    int* dist = new int[totalCells];
+    
     for (int i = 0 ; i < totalCells ; ++i) {
         added[i] = false;
         cameFrom[i] = -1;
@@ -316,6 +317,7 @@ bool RobotMap::findClosestUnvisitedv4(vector<Cell*> &path, Cell* source, int bat
     q.push(source);
     added[source->index] = true;
     cameFrom[source->index] = -1;
+    dist[source->index] = 0;
     ++battery;
 
     Cell* goal = nullptr;
@@ -324,7 +326,7 @@ bool RobotMap::findClosestUnvisitedv4(vector<Cell*> &path, Cell* source, int bat
         q.pop();
         ++bfsTraversedNodes;
 
-        if (--battery == 0) {
+        if (!(battery - dist[current->index])) {
             outOfBattery = true;
             break;
         }
@@ -342,6 +344,7 @@ bool RobotMap::findClosestUnvisitedv4(vector<Cell*> &path, Cell* source, int bat
             q.push(adj);
             cameFrom[adj->index] = current->index;
             added[adj->index] = true;
+            dist[adj->index] = dist[current->index] + 1;
         }
     }
 
@@ -353,6 +356,7 @@ bool RobotMap::findClosestUnvisitedv4(vector<Cell*> &path, Cell* source, int bat
 
     delete [] added;
     delete [] cameFrom;
+    delete [] dist;
     return hasPath;
 };
 
@@ -369,7 +373,7 @@ void RobotMap::findClosestUnvisitedToR(vector<Cell*> &path, int lastIncIndex) {
         }
     }
 
-    DqPathWrapper* d = findMinimumPathToR(closestUnvisited, lastIncIndex);
+    unique_ptr<DqPathWrapper> d = findMinimumPathToR(closestUnvisited, lastIncIndex);
     deque<Cell*> &dq = d->path;
 
     // convert deque path to path for robot
@@ -378,8 +382,6 @@ void RobotMap::findClosestUnvisitedToR(vector<Cell*> &path, int lastIncIndex) {
         path.push_back(dq.front());
         dq.pop_front();
     }
-
-    delete d;
 };
 
 void RobotMap::findFarestUnvisitedToR(vector<Cell*> &path, int lastIncIndex) {
@@ -396,7 +398,7 @@ void RobotMap::findFarestUnvisitedToR(vector<Cell*> &path, int lastIncIndex) {
         }
     }
 
-    DqPathWrapper* d = findMinimumPathToR(farestUnvisited, lastIncIndex);
+    unique_ptr<DqPathWrapper> d = findMinimumPathToR(farestUnvisited, lastIncIndex);
     deque<Cell*> &dq = d->path;
 
     // convert deque path to path for robot
@@ -405,15 +407,13 @@ void RobotMap::findFarestUnvisitedToR(vector<Cell*> &path, int lastIncIndex) {
         path.push_back(dq.front());
         dq.pop_front();
     }
-
-    delete d;
 };
 
 void RobotMap::randomShortestWayHome(vector<Cell*> &path, Cell* current) {
 
     int lastIncIndex = -1;
 
-    DqPathWrapper* d = findMinimumPathToR(current, lastIncIndex);
+    unique_ptr<DqPathWrapper> d = findMinimumPathToR(current, lastIncIndex);
     deque<Cell*> &dq = d->path;
 
     // select one with minimum visitedSum
@@ -423,8 +423,6 @@ void RobotMap::randomShortestWayHome(vector<Cell*> &path, Cell* current) {
         path.push_back(dq.back());
         dq.pop_back();
     }
-    
-    delete d;
 };
 
 Cell* RobotMap::getRecharger() {
@@ -747,7 +745,6 @@ void RobotMap::findRandomShortestWayHome(_tmpPathWrapper* pathWrapper, Cell* sou
         cellsMinToR.clear();
         minDistance = dist[current->index];
 
-        // vector<Cell*> &adjs = adjCells[current->index];
         Cell* (&adjs)[4] = current->adjCells;
         for (short i = 0 ; i < 4 && adjs[i] != nullptr ; ++i) {
             if (dist[adjs[i]->index] > minDistance) continue;
@@ -771,15 +768,15 @@ void RobotMap::findRandomShortestWayHome(_tmpPathWrapper* pathWrapper, Cell* sou
     }
 };
 
-void RobotMap::findWayHomeViaInc(DqPathWrapper* dqPathWrapper, 
-    Cell* source, const int lastIncIndex) {
+unique_ptr<DqPathWrapper> RobotMap::findWayHomeViaInc(Cell* source, const int lastIncIndex) {
 
     int* &dist = allDijkData[lastIncIndex]->distanceToR;
     Cell *next, *current = source;
     vector<Cell*> cellsMinToR; // adj cells with min dist to R with respect to curent cell
     int minDistance;
     int count = 0;
-    dqPathWrapper->path.push_back(source);
+    unique_ptr<DqPathWrapper> dpc(new DqPathWrapper());
+    dpc->path.push_back(source);
     
     while(current != recharger) {
         cellsMinToR.clear();
@@ -804,28 +801,26 @@ void RobotMap::findWayHomeViaInc(DqPathWrapper* dqPathWrapper,
         }
 
         next = cellsMinToR[index];
-        dqPathWrapper->path.push_back(next);
-        dqPathWrapper->visitedSum += next->visited;
+        dpc->path.push_back(next);
+        dpc->visitedSum += next->visited;
         current = next;
     }
+
+    return dpc;
 };
 
-DqPathWrapper* RobotMap::findMinimumPathToR(Cell* source, int indexViaCellAdjToR) {
-    vector<DqPathWrapper*> pathsWithLeastVisited;
+unique_ptr<DqPathWrapper> RobotMap::findMinimumPathToR(Cell* source, int indexViaCellAdjToR) {
+    vector<unique_ptr<DqPathWrapper>> pathsWithLeastVisited;
     int minVisited = MAXINT;
     hasMultiplePaths = false;
     for (short i = 0 ; i < randomHomingPaths ; ++i) {
-        DqPathWrapper* dqPathWrapper = new DqPathWrapper();
-        findWayHomeViaInc(dqPathWrapper, source, indexViaCellAdjToR);
-        if (dqPathWrapper->visitedSum < minVisited) {
-            minVisited = dqPathWrapper->visitedSum;
-            for (int i = 0 ; i < pathsWithLeastVisited.size() ; ++i) {
-                delete pathsWithLeastVisited[i];
-            }
+        unique_ptr<DqPathWrapper> dpc = findWayHomeViaInc(source, indexViaCellAdjToR);
+        if (dpc->visitedSum < minVisited) {
+            minVisited = dpc->visitedSum;
             pathsWithLeastVisited.clear();
         }
-        if (dqPathWrapper->visitedSum <= minVisited) {
-            pathsWithLeastVisited.push_back(dqPathWrapper);
+        if (dpc->visitedSum <= minVisited) {
+            pathsWithLeastVisited.push_back(move(dpc));
         }
         if (!hasMultiplePaths) break;
     }
@@ -833,12 +828,7 @@ DqPathWrapper* RobotMap::findMinimumPathToR(Cell* source, int indexViaCellAdjToR
     // select random one with minimum visitedSum
     uniform_int_distribution<int> unidist(0, pathsWithLeastVisited.size()-1);
     int index = unidist(randomGenerator);
-    DqPathWrapper* d = pathsWithLeastVisited[index];
-    pathsWithLeastVisited[index] = nullptr;
-
-    for (int i = 0 ; i < pathsWithLeastVisited.size() ; ++i) {
-        delete pathsWithLeastVisited[i];
-    }
+    unique_ptr<DqPathWrapper> d = move(pathsWithLeastVisited[index]);
 
     return d;
 };
